@@ -1,0 +1,18 @@
+# Template file for 'gdbuspp'
+pkgname=gdbuspp
+version=3
+revision=1
+wrksrc="${pkgname}-${version}"
+build_style=meson
+hostmakedepends="meson pkg-config glib-devel"
+makedepends="glib"
+short_desc="GDBus++ - a glib2 D-Bus wrapper for C++"
+maintainer=""
+license="AGPL-3.0-only"
+homepage="https://codeberg.org/OpenVPN/${pkgname}"
+distfiles="https://swupdate.openvpn.net/community/releases/${pkgname}-${version}.tar.xz"
+checksum=c7a053a13c4eb5811a542b747d5fcdb3a8e58a4a42c7237cc5e2e2ca72e0c94e
+
+#pre_configure() {
+#	meson subprojects download --sourcedir="${wrksrc}"
+#}
