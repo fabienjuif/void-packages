@@ -1,0 +1,18 @@
+# Template file for 'swaytreesave'
+pkgname=swaytreesave
+version=0.4.0
+revision=1
+build_style=cargo
+build_helper="rust"
+hostmakedepends="rust cargo"
+makedepends="rust-std pkg-config"
+short_desc="CLI to save and load your compositors tree/layout"
+maintainer="Fabien JUIF <fabien.juif@gmail.com>"
+license="MIT"
+homepage="https://github.com/fabienjuif/swaytreesave"
+distfiles="https://github.com/fabienjuif/swaytreesave/archive/refs/tags/v${version}.tar.gz"
+checksum=2b31fcbf97bea73d197a8f233a8cfbd872c5daa1856cbc51b642d9ac57b75f3b
+
+post_install() {
+	 vlicense LICENSE
+}
