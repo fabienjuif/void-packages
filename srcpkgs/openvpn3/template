@@ -14,15 +14,10 @@ homepage="https://codeberg.org/OpenVPN/openvpn3-linux"
 distfiles="https://swupdate.openvpn.net/community/releases/openvpn3-linux-${version}.tar.xz"
 checksum=9ecf8dccdbc601c4325b0248db7cb1e39c8689e3b99f5fc801b42056d68a7256
 
-# pre_configure() {
-# 	meson subprojects download --sourcedir="${wrksrc}"
-# 	export CXXFLAGS="$CXXFLAGS -Wno-error=non-virtual-dtor"
-# }
+system_groups="openvpn"
+system_accounts="openvpn"
+_openvpn3_groups="openvpn"
 
-# post_install() {
-# 	# vinstall ${FILESDIR}/openvpn3.rule 644 etc/repkg/rules/system
-# 	# vinstall ${FILESDIR}/sysusers-openvpn3.conf 644 usr/lib/sysusers.d
-
-# 	# Init configuration
-# 	${DESTDIR}/usr/bin/openvpn3-admin init-config --write-configs --force
-# }
+post_install() {
+    echo "run \`sudo openvpn3-admin init-config --write-configs --force\`"
+}
