@@ -1,0 +1,332 @@
+From eff922aa05c4684e4097536207499d425e698a6c Mon Sep 17 00:00:00 2001
+From: columbarius <co1umbarius@protonmail.com>
+Date: Thu, 1 Jul 2021 15:25:42 +0200
+Subject: [PATCH 1/3] screencast: send crop via pipewire
+
+---
+ include/screencast_common.h          |  8 ++++++++
+ src/screencast/pipewire_screencast.c | 20 ++++++++++++++++++--
+ 2 files changed, 26 insertions(+), 2 deletions(-)
+
+diff --git a/include/screencast_common.h b/include/screencast_common.h
+index cae85052..be10e276 100644
+--- a/include/screencast_common.h
++++ b/include/screencast_common.h
+@@ -63,12 +63,20 @@ struct xdpw_frame_damage {
+ 	uint32_t height;
+ };
+ 
++struct xdpw_frame_crop {
++	uint32_t x;
++	uint32_t y;
++	uint32_t width;
++	uint32_t height;
++};
++
+ struct xdpw_frame {
+ 	bool y_invert;
+ 	uint64_t tv_sec;
+ 	uint32_t tv_nsec;
+ 	struct xdpw_frame_damage damage[4];
+ 	uint32_t damage_count;
++	struct xdpw_frame_crop crop;
+ 	struct xdpw_buffer *xdpw_buffer;
+ 	struct pw_buffer *pw_buffer;
+ };
+diff --git a/src/screencast/pipewire_screencast.c b/src/screencast/pipewire_screencast.c
+index 0611fd51..be82711b 100644
+--- a/src/screencast/pipewire_screencast.c
++++ b/src/screencast/pipewire_screencast.c
+@@ -203,7 +203,7 @@ static void pwr_handle_stream_param_changed(void *data, uint32_t id,
+ 	struct pw_stream *stream = cast->stream;
+ 	uint8_t params_buffer[3][1024];
+ 	struct spa_pod_dynamic_builder b[3];
+-	const struct spa_pod *params[4];
++	const struct spa_pod *params[5];
+ 	uint32_t blocks;
+ 	uint32_t data_type;
+ 
+@@ -330,7 +330,12 @@ static void pwr_handle_stream_param_changed(void *data, uint32_t id,
+ 			sizeof(struct spa_meta_region) * 1,
+ 			sizeof(struct spa_meta_region) * 4));
+ 
+-	pw_stream_update_params(stream, params, 4);
++	params[4] = spa_pod_builder_add_object(&b[2].b,
++		SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
++		SPA_PARAM_META_type, SPA_POD_Id(SPA_META_VideoCrop),
++		SPA_PARAM_META_size, SPA_POD_Int(sizeof(struct spa_meta_region)));
++
++	pw_stream_update_params(stream, params, 5);
+ 	spa_pod_dynamic_builder_clean(&b[0]);
+ 	spa_pod_dynamic_builder_clean(&b[1]);
+ 	spa_pod_dynamic_builder_clean(&b[2]);
+@@ -493,6 +498,14 @@ void xdpw_pwr_enqueue_buffer(struct xdpw_screencast_instance *cast) {
+ 		}
+ 	}
+ 
++	struct spa_meta_region *crop;
++	if ((crop = spa_buffer_find_meta_data(spa_buf, SPA_META_VideoCrop, sizeof(*crop)))) {
++		crop->region.position.x = cast->current_frame.crop.x;
++		crop->region.position.y = cast->current_frame.crop.y;
++		crop->region.size.width = cast->current_frame.crop.width;
++		crop->region.size.height = cast->current_frame.crop.height;
++	}
++
+ 	if (buffer_corrupt) {
+ 		for (uint32_t plane = 0; plane < spa_buf->n_datas; plane++) {
+ 			d[plane].chunk->flags = SPA_CHUNK_FLAG_CORRUPTED;
+@@ -515,6 +528,9 @@ void xdpw_pwr_enqueue_buffer(struct xdpw_screencast_instance *cast) {
+ 	logprint(TRACE, "pipewire: width %d", cast->current_frame.xdpw_buffer->width);
+ 	logprint(TRACE, "pipewire: height %d", cast->current_frame.xdpw_buffer->height);
+ 	logprint(TRACE, "pipewire: y_invert %d", cast->current_frame.y_invert);
++	logprint(TRACE, "pipewire: crop %u,%u (%ux%u)",
++			cast->current_frame.crop.x, cast->current_frame.crop.y,
++			cast->current_frame.crop.width, cast->current_frame.crop.height);
+ 	logprint(TRACE, "********************");
+ 
+ 	pw_stream_queue_buffer(cast->stream, pw_buf);
+
+From b0886795d36b2d212cddf9f6dbe8bdb749433be3 Mon Sep 17 00:00:00 2001
+From: columbarius <co1umbarius@protonmail.com>
+Date: Fri, 9 Jul 2021 11:13:13 +0200
+Subject: [PATCH 2/3] screencast: add cropping via wlroots
+ capture_output_region
+
+---
+ include/screencast_common.h          |  7 +++++++
+ src/screencast/pipewire_screencast.c |  2 +-
+ src/screencast/wlr_screencast.c      | 13 +++++++++++--
+ 3 files changed, 19 insertions(+), 3 deletions(-)
+
+diff --git a/include/screencast_common.h b/include/screencast_common.h
+index be10e276..0087f5c0 100644
+--- a/include/screencast_common.h
++++ b/include/screencast_common.h
+@@ -70,6 +70,12 @@ struct xdpw_frame_crop {
+ 	uint32_t height;
+ };
+ 
++enum xdpw_cropmode {
++	XDPW_CROP_NONE,
++	XDPW_CROP_WLROOTS,
++	XDPW_CROP_PIPEWIRE,
++};
++
+ struct xdpw_frame {
+ 	bool y_invert;
+ 	uint64_t tv_sec;
+@@ -167,6 +173,7 @@ struct xdpw_screencast_instance {
+ 	enum xdpw_frame_state frame_state;
+ 	struct wl_list buffer_list;
+ 	bool avoid_dmabufs;
++	enum xdpw_cropmode cropmode;
+ 
+ 	// pipewire
+ 	struct pw_stream *stream;
+diff --git a/src/screencast/pipewire_screencast.c b/src/screencast/pipewire_screencast.c
+index be82711b..53d5dbfd 100644
+--- a/src/screencast/pipewire_screencast.c
++++ b/src/screencast/pipewire_screencast.c
+@@ -499,7 +499,7 @@ void xdpw_pwr_enqueue_buffer(struct xdpw_screencast_instance *cast) {
+ 	}
+ 
+ 	struct spa_meta_region *crop;
+-	if ((crop = spa_buffer_find_meta_data(spa_buf, SPA_META_VideoCrop, sizeof(*crop)))) {
++	if (cast->cropmode == XDPW_CROP_PIPEWIRE && (crop = spa_buffer_find_meta_data(spa_buf, SPA_META_VideoCrop, sizeof(*crop)))) {
+ 		crop->region.position.x = cast->current_frame.crop.x;
+ 		crop->region.position.y = cast->current_frame.crop.y;
+ 		crop->region.size.width = cast->current_frame.crop.width;
+diff --git a/src/screencast/wlr_screencast.c b/src/screencast/wlr_screencast.c
+index 6dc595d5..a70b4e0c 100644
+--- a/src/screencast/wlr_screencast.c
++++ b/src/screencast/wlr_screencast.c
+@@ -252,8 +252,17 @@ static const struct zwlr_screencopy_frame_v1_listener wlr_frame_listener = {
+ };
+ 
+ void xdpw_wlr_register_cb(struct xdpw_screencast_instance *cast) {
+-	cast->frame_callback = zwlr_screencopy_manager_v1_capture_output(
+-		cast->ctx->screencopy_manager, cast->target->with_cursor, cast->target->output->output);
++	switch (cast->cropmode) {
++	case XDPW_CROP_WLROOTS:
++		cast->frame_callback = zwlr_screencopy_manager_v1_capture_output_region(
++			cast->ctx->screencopy_manager, cast->target->with_cursor, cast->target->output->output,
++			cast->current_frame.crop.x, cast->current_frame.crop.y,
++			cast->current_frame.crop.width, cast->current_frame.crop.height);
++		break;
++	default:
++		cast->frame_callback = zwlr_screencopy_manager_v1_capture_output(
++			cast->ctx->screencopy_manager, cast->target->with_cursor, cast->target->output->output);
++	}
+ 
+ 	zwlr_screencopy_frame_v1_add_listener(cast->frame_callback,
+ 		&wlr_frame_listener, cast);
+
+From d1aa9a2762c04f378c99f8b305a111689caad257 Mon Sep 17 00:00:00 2001
+From: columbarius <co1umbarius@protonmail.com>
+Date: Sun, 14 Nov 2021 15:29:13 +0100
+Subject: [PATCH 3/3] screencast: add option to select cropping region
+
+---
+ include/config.h                   |  2 ++
+ include/screencast_common.h        |  1 +
+ src/core/config.c                  | 36 ++++++++++++++++++++++++++++++
+ src/screencast/screencast.c        | 10 +++++++++
+ src/screencast/screencast_common.c | 13 +++++++++++
+ xdg-desktop-portal-wlr.5.scd       | 11 +++++++++
+ 6 files changed, 73 insertions(+)
+
+diff --git a/include/config.h b/include/config.h
+index f856dc1a..7dcd01ef 100644
+--- a/include/config.h
++++ b/include/config.h
+@@ -12,6 +12,8 @@ struct config_screencast {
+ 	char *chooser_cmd;
+ 	enum xdpw_chooser_types chooser_type;
+ 	bool force_mod_linear;
++	enum xdpw_cropmode cropmode;
++	struct xdpw_frame_crop region;
+ };
+ 
+ struct xdpw_config {
+diff --git a/include/screencast_common.h b/include/screencast_common.h
+index 0087f5c0..cbf6061a 100644
+--- a/include/screencast_common.h
++++ b/include/screencast_common.h
+@@ -234,4 +234,5 @@ enum xdpw_chooser_types get_chooser_type(const char *chooser_type);
+ const char *chooser_type_str(enum xdpw_chooser_types chooser_type);
+ 
+ struct xdpw_frame_damage merge_damage(struct xdpw_frame_damage *damage1, struct xdpw_frame_damage *damage2);
++const char *cropmode_str(enum xdpw_cropmode cropmode);
+ #endif /* SCREENCAST_COMMON_H */
+diff --git a/src/core/config.c b/src/core/config.c
+index 693cc89e..8cbac840 100644
+--- a/src/core/config.c
++++ b/src/core/config.c
+@@ -17,6 +17,11 @@ void print_config(enum LOGLEVEL loglevel, struct xdpw_config *config) {
+ 	logprint(loglevel, "config: chooser_cmd: %s", config->screencast_conf.chooser_cmd);
+ 	logprint(loglevel, "config: chooser_type: %s", chooser_type_str(config->screencast_conf.chooser_type));
+ 	logprint(loglevel, "config: force_mod_linear: %d", config->screencast_conf.force_mod_linear);
++	logprint(loglevel, "config: cropmode: %s", cropmode_str(config->screencast_conf.cropmode));
++	logprint(loglevel, "config: cropping_region x: %u", config->screencast_conf.region.x);
++	logprint(loglevel, "config: cropping_region y: %u", config->screencast_conf.region.y);
++	logprint(loglevel, "config: cropping_region width: %u", config->screencast_conf.region.width);
++	logprint(loglevel, "config: cropping_region height: %u", config->screencast_conf.region.height);
+ }
+ 
+ // NOTE: calling finish_config won't prepare the config to be read again from config file
+@@ -60,6 +65,28 @@ static void parse_bool(bool *dest, const char* value) {
+ 	}
+ }
+ 
++static void parse_region(struct xdpw_frame_crop *dest, const char* value) {
++	if (value == NULL || *value == '\0') {
++		logprint(TRACE, "config: skipping empty value in config file");
++		return;
++	}
++	sscanf(value, "%u,%u:%ux%u", &dest->x, &dest->y, &dest->width, &dest->height);
++}
++
++static void parse_cropmode(enum xdpw_cropmode *dest, const char* value) {
++	if (value == NULL || *value == '\0') {
++		logprint(TRACE, "config: skipping empty value in config file");
++		return;
++	}
++	if (strcmp(value, "none") == 0) {
++		*dest = XDPW_CROP_NONE;
++	} else if (strcmp(value, "wlroots") == 0) {
++		*dest = XDPW_CROP_WLROOTS;
++	} else if (strcmp(value, "pipewire") == 0) {
++		*dest = XDPW_CROP_PIPEWIRE;
++	}
++}
++
+ static int handle_ini_screencast(struct config_screencast *screencast_conf, const char *key, const char *value) {
+ 	if (strcmp(key, "output_name") == 0) {
+ 		parse_string(&screencast_conf->output_name, value);
+@@ -78,6 +105,10 @@ static int handle_ini_screencast(struct config_screencast *screencast_conf, cons
+ 		free(chooser_type);
+ 	} else if (strcmp(key, "force_mod_linear") == 0) {
+ 		parse_bool(&screencast_conf->force_mod_linear, value);
++	} else if (strcmp(key, "cropmode") == 0) {
++		parse_cropmode(&screencast_conf->cropmode, value);
++	} else if (strcmp(key, "region") == 0) {
++		parse_region(&screencast_conf->region, value);
+ 	} else {
+ 		logprint(TRACE, "config: skipping invalid key in config file");
+ 		return 0;
+@@ -100,6 +131,11 @@ static int handle_ini_config(void *data, const char* section, const char *key, c
+ static void default_config(struct xdpw_config *config) {
+ 	config->screencast_conf.max_fps = 0;
+ 	config->screencast_conf.chooser_type = XDPW_CHOOSER_DEFAULT;
++	config->screencast_conf.cropmode = XDPW_CROP_NONE;
++	config->screencast_conf.region.x = 0;
++	config->screencast_conf.region.y = 0;
++	config->screencast_conf.region.width = 0;
++	config->screencast_conf.region.height = 0;
+ }
+ 
+ static bool file_exists(const char *path) {
+diff --git a/src/screencast/screencast.c b/src/screencast/screencast.c
+index 627bb584..c391d0f3 100644
+--- a/src/screencast/screencast.c
++++ b/src/screencast/screencast.c
+@@ -73,6 +73,16 @@ void xdpw_screencast_instance_init(struct xdpw_screencast_context *ctx,
+ 	cast->avoid_dmabufs = false;
+ 	cast->teardown = false;
+ 	wl_list_init(&cast->buffer_list);
++	if (ctx->state->config->screencast_conf.chooser_type == XDPW_CHOOSER_NONE &&
++			ctx->state->config->screencast_conf.cropmode != XDPW_CROP_NONE &&
++			ctx->state->config->screencast_conf.region.width != 0 &&
++			ctx->state->config->screencast_conf.region.height != 0) {
++		cast->cropmode = ctx->state->config->screencast_conf.cropmode;
++		cast->current_frame.crop.x = ctx->state->config->screencast_conf.region.x;
++		cast->current_frame.crop.y = ctx->state->config->screencast_conf.region.y;
++		cast->current_frame.crop.width = ctx->state->config->screencast_conf.region.width;
++		cast->current_frame.crop.height = ctx->state->config->screencast_conf.region.height;
++	}
+ 	logprint(INFO, "xdpw: screencast instance %p has %d references", cast, cast->refcount);
+ 	wl_list_insert(&ctx->screencast_instances, &cast->link);
+ 	logprint(INFO, "xdpw: %d active screencast instances",
+diff --git a/src/screencast/screencast_common.c b/src/screencast/screencast_common.c
+index d6d13db7..2cff6548 100644
+--- a/src/screencast/screencast_common.c
++++ b/src/screencast/screencast_common.c
+@@ -424,3 +424,16 @@ struct xdpw_frame_damage merge_damage(struct xdpw_frame_damage *damage1, struct
+ 
+ 	return damage;
+ }
++
++const char *cropmode_str(enum xdpw_cropmode cropmode) {
++	switch (cropmode) {
++	case XDPW_CROP_NONE:
++		return "none";
++	case XDPW_CROP_WLROOTS:
++		return "wlroots";
++	case XDPW_CROP_PIPEWIRE:
++		return "pipewire";
++	}
++	fprintf(stderr, "Could not find chooser type %d\n", cropmode);
++	abort();
++}
+diff --git a/xdg-desktop-portal-wlr.5.scd b/xdg-desktop-portal-wlr.5.scd
+index 6cec9686..3159f0f4 100644
+--- a/xdg-desktop-portal-wlr.5.scd
++++ b/xdg-desktop-portal-wlr.5.scd
+@@ -80,6 +80,17 @@ These options need to be placed under the **[screencast]** section.
+ 
+ 	This option is experimental and can be removed or replaced in future versions.
+ 
++**cropmode** = _type_
++	Specifies the mode to crop the output to the defined region.
++
++	The supported types are:
++	- none: No cropping, ignore region.
++	- wlroots: Crop inside the compositor. Better performance.
++	- pipewire: Send cropping information via PipeWire.
++
++**region** = _offset_x_,_offset_y_:_width_x_height_
++	Specifies the region the output is cropped to. Only works with **chooser_type** = none.
++
+ ## OUTPUT CHOOSER
+ 
+ The chooser can be any program or script with the following behaviour:
