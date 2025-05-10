@@ -1,0 +1,18 @@
+# Template file for 'debouncerd'
+pkgname=debouncerd
+version=0.0.3
+revision=1
+build_style=cargo
+build_helper="rust"
+hostmakedepends="rust cargo"
+makedepends="dbus-devel rust-std pkg-config"
+short_desc="A simple daemon to debounce command executions"
+maintainer="Fabien JUIF <fabien.juif@gmail.com>"
+license="MIT"
+homepage="https://github.com/fabienjuif/debouncerd"
+distfiles="https://github.com/fabienjuif/debouncerd/archive/refs/tags/v${version}.tar.gz"
+checksum=c8d850d1de382982247b387f34fae02446f2766bb27a957c99062aa282e5b3fc
+
+post_install() {
+	vlicense LICENSE
+}
