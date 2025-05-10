@@ -1,0 +1,23 @@
+# Template file for 'openvpn3'
+pkgname=openvpn3
+version=24
+revision=2
+wrksrc="openvpn3-linux-${version}"
+build_style=meson
+hostmakedepends="python3-docutils python3-Jinja2 meson pkg-config tinyxml2-devel jsoncpp-devel dbus-devel glib-devel libcap-ng-devel libnl3-devel openssl-devel protobuf-devel protobuf"
+makedepends="glib jsoncpp libcap-ng lz4 util-linux libprotobuf tinyxml2 libnl gdbuspp"
+depends="python3-dbus python3-gobject gdbuspp"
+short_desc="OpenVPN 3 Linux client"
+maintainer=""
+license="AGPL-3.0-only"
+homepage="https://codeberg.org/OpenVPN/openvpn3-linux"
+distfiles="https://swupdate.openvpn.net/community/releases/openvpn3-linux-${version}.tar.xz"
+checksum=9ecf8dccdbc601c4325b0248db7cb1e39c8689e3b99f5fc801b42056d68a7256
+
+system_groups="openvpn"
+system_accounts="openvpn"
+_openvpn3_groups="openvpn"
+
+post_install() {
+    echo "run \`sudo openvpn3-admin init-config --write-configs --force\`"
+}
