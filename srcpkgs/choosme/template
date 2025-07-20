@@ -1,0 +1,17 @@
+# Template file for 'choosme'
+pkgname=choosme
+version=0.1.0
+revision=1
+build_style=cargo
+hostmakedepends="gtk4-devel dbus-devel pkg-config"
+short_desc="GTK4 App menu compatible with xdg-open"
+maintainer="Fabien JUIF <fabien.juif@gmail.com>"
+license="MIT"
+homepage="https://github.com/fabienjuif/choosme"
+changelog="https://github.com/fabienjuif/choosme/releases"
+distfiles="https://github.com/fabienjuif/choosme/archive/refs/tags/v${version}.tar.gz"
+checksum=999bbbb9738ef04d10757f0ac4215dd5085040c7eae69799e345770f0cec48be
+
+post_install() {
+	vlicense LICENSE
+}
